@@ -1,5 +1,7 @@
 # sockets-api
 
+*This is an initial draft*
+
 ```
 interface Socket : EventTarget {
   constructor(object SocketInit);
@@ -7,6 +9,11 @@ interface Socket : EventTarget {
   ReadableStream stream();
   Promise<undefined> close(optional any reason);
   
+  // True if a ReadableStream has been acquired or if a 'socket' event
+  // listener has been added. If locked is true, acquiring a ReadableStream
+  // or attaching a 'socket' event listener will fail.
+  readonly attribute locked;
+
   readonly attribute Promise<undefined> ready;
   readonly attribute Promise<undefined> closed;
  
@@ -168,6 +175,8 @@ dictionary SocketResponseOptions {
 // Minimal TCP client
 const socket = new Socket({
   remote: { address: '123.123.123.123', port: 123 },
+  // Body can be string, ArrayBuffer, ArrayBufferView, Blob, ReadableStream, a Promise
+  // that resolves any of these, or a sync or async Function that returns any of these. 
   body: 'hello world'
 });
 
@@ -181,6 +190,13 @@ const socketListener = new SocketListener({ local: '123.123.123.123', port: 123 
 for await (const { socket, respondWith } of socketListener) {
   respondWith(new SocketResponse({ body: socket.stream() }));
 }
+
+// or...
+
+const socketListener = new SocketListener({ local: '123.123.123.123', port: 123 });
+socketListener.addEventListener('socket', { socket, respondWith } => {
+  respondWith(new SocketResponse({ body: socket.stream() }));    
+});
 ```
 
 ```js
@@ -200,4 +216,3 @@ writer.write(enc.encode('hello')); // send a datagram packet with 'hello'
 writer.write(enc.encode('there')); // send a datagram packet with 'there'
 writer.close();
 ```
-
