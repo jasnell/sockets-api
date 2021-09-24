@@ -1,6 +1,27 @@
 # sockets-api
 
-*This is an initial draft*
+*This is an initial draft* intended to spark a conversation about what the actual API should ultimately be. Nothing here is set in stone. Open issues to discuss the details.
+
+## What is the goal here?
+
+There is currently no common API for sockets (client or server) in JavaScript environments. Node.js has an API (actually, it has several), Deno has it's own API, there have been several attempts at defining a raw sockets API for browsers that really haven't gone anywhere. For Cloudflare Workers, we'd like to enable a raw sockets API but we don't want to invent Yet Another One that is incompatible with everyone else's.
+
+Node.js' API is by far the most extensively used. We could choose to just implement that but that brings with it a tremendous amount of complexity. The Node.js API is built directly on Node.js' `EventEmitter` and on Node.js Streams. The API surface area is very large (`EventEmitter`, `stream.Readable`, `stream.Writable`, `stream.Duplex`, `net.Socket`, `net.Server`, `tls.TLSSocket`, `tls.TLSServer`, `tls.SecureContext`, a vast multitude of options -- some that we're not even sure people actually use). The current API design and implementation makes it fairly slow in comparison to raw sockets in other environments, with inefficient buffering and data flow prioritization. The existing Node.js API also ignores modern idiomatic JavaScript patterns and common APIs that exist across multiple JavaScript environments (e.g. promises, web streams, cryptokey, etc).
+
+Other environments, such as Deno, have opted for a much more constrained approach with significantly fewer options and a greater focus on web platform API compatibility. But that API is currently designed around the Deno specific namespace.
+
+The key goal here is to design a raw sockets API that is not specific to any single JavaScript environment, that can be implemented consistently across multiple environments, giving developers a single API surface area that will just work.
+
+The API needs to be:
+
+1. Performant. It must allow for performance optimizations that improve significantly on the current state of the art in the various environments. 
+2. Idiomatic. It must follow common, modern JavaScript idioms and familiar APIs that are available across multiple JavaScript runtimes.
+3. Simple. It must limit the API surface area and options to a minimal set, allowing expansion as needs progress, but focusing on immediately known requirements.
+4. Modern. It must account for newer protocols such as QUIC, and newer paradigms such as server-initiated uni and bi-directional streams.
+
+## A Conversation Starter
+
+The API description below is intended as a conversation starter. It's meant to solicit opinions. If your knee jerk reaction is "Oh my god, what is this crap?", open an issue and express your concerns *and* alternative suggestions. Please don't forget the alternative suggestions as those are the only bits that are truly useful.
 
 ```
 interface Socket : EventTarget {
