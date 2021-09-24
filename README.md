@@ -23,7 +23,7 @@ The API needs to be:
 
 The API description below is intended as a conversation starter. It's meant to solicit opinions. If your knee jerk reaction is "Oh my god, what is this crap?", open an issue and express your concerns *and* alternative suggestions. Please don't forget the alternative suggestions as those are the only bits that are truly useful.
 
-```
+```webidl
 interface Socket : EventTarget {
   constructor(object SocketInit);
 
