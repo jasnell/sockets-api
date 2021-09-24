@@ -2,7 +2,7 @@
 
 *This is an initial draft*
 
-```
+```webidl
 interface Socket : EventTarget {
   constructor(object SocketInit);
 
