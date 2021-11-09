@@ -103,10 +103,13 @@ SocketInit includes TLSSocketInit;
 
 dictionary TLSSocketInit {
   USVString servername;
-  ArrayBufferView or USVString key;
+  CryptoKey key;
+
+  // It would be great if there were a common object API for certificates like
+  // there is for keys... If string is used for cert or ca, then it must be
+  // in PEM format.
   ArrayBufferView or USVString cert;
   ArrayBufferView[] or USVString[] ca;
-  ArrayBufferView or USVString passphrase;
   
   // The init object is extensible such that additional properties for TLS
   // extensions can be added. E.g. a session id extension may look like:
