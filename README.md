@@ -27,25 +27,38 @@ The API description below is intended as a conversation starter. It's meant to s
 interface Socket : EventTarget {
   constructor(object SocketInit);
 
-  ReadableStream stream();
-  Promise<undefined> close(optional any reason);
-  
-  // True if a ReadableStream has been acquired or if a 'socket' event
-  // listener has been added. If locked is true, acquiring a ReadableStream
-  // or attaching a 'socket' event listener will fail.
-  readonly attribute locked;
+  readonly attribute ReadableStream readable;
+  readonly attribute WritableStream writable;
 
+  // Promise that is resolved when the socket connection has been
+  // established. This will be dependent on the type of socket
+  // and the underlying protocol. For instance, for a TLS socket,
+  // ready would indicate when the TLS handshake has been completed
+  // for this half of the connection.
   readonly attribute Promise<undefined> ready;
+  
+  // Promise that is resolved when the socket connection has closed
+  // and is no longer usable.
   readonly attribute Promise<undefined> closed;
- 
+
+  // Request immediate and abrupt termination of the socket connection.
+  // Queued inbound and outbound data will be dropped and both the
+  // readable and writable sides will be transitioned into an errored
+  // state. The socket's AbortSignal will also signal an abort event
+  Promise<undefined> abort(optional any reason);
+  readonly attribute AbortSignal signal;
+
   readonly attribute SocketStats stats;
   readonly attribute SocketInfo info;
 }
 
-enum SocketType{ "tcp", "udp", "tls" }
+enum SocketType{ "tcp", "udp", "tls", "quic" }
+
+typedef USVString ALPN;
+typedef (SocketType or ALPN) Type;
 
 // As an alternative to getting a ReadableStream, a socket
-// consumer can attach a SocketDataEven that will receive
+// consumer can attach a SocketDataEvent that will receive
 // chunks of data as they arrive with no backpressure
 // or queuing applied.
 interface SocketDataEvent : Event {
@@ -58,16 +71,27 @@ dictionary SocketAddress {
 }
  
 dictionary SocketInit {
-  SocketType type = "tcp";
+  Type type = "tcp";
   SocketAddress remote;
   SocketAddress local;
+
+  // Optionally allows an outbound payload source to be specified when the socket
+  // is constructed. Provides an alternative to using socket.writable to allow the
+  // flow of data to start as soon as possible.
   SocketBody | Promise<SocketBody> body;
+  
+  // A signal that can be used to cancel/abort the socket.
   AbortSignal signal;
+
   bool allowPooling = true;
-  bool allowHalfOpen = true;
   bool noDelay = false;
-  unsigned long connectionTimeout = 0;
+  
+  // Amount of time, in milliseconds, to wait for connection ready
+  unsigned long readyTimeout = 0;
+  
+  // Amount of time, in milliseconds, a connection is allowed to remain idle
   unsigned long idleTimeout = 0;
+  
   unsigned long sendBufferSize;
   unsigned long receiveBufferSize;
   unsigned short ttl;
@@ -78,23 +102,25 @@ typedef (string | ArrayBuffer | ArrayBufferView | ReadableStream | Blob ) Socket
 SocketInit includes TLSSocketInit;
 
 dictionary TLSSocketInit {
-  sequence<RTCDtlsFingerprint> serverCertificateFingerprints;
-  sequence<USVString> alpn;
   USVString servername;
-  Uint8Array key;
-  Uint8Array cert;
-  USVString passphrase;
-  USVString sessionIDContext;
-  unsigned long sessionTimeout;
-  Uint8Array session;
-  Uint8Array ticket;
-  unsigned long minDHSize = 1024;
-  USVString ecdhCurve;
-  sequence<USVString> signatureAlgorithms;
-  sequence<USVString> cipherAlgorithms;
-  PresharedKeyCallback presharedKey;
-  ServerIdentityCallback checkServerIdentity;
-  OCSPCallback ocsp;
+  ArrayBufferView or USVString key;
+  ArrayBufferView or USVString cert;
+  ArrayBufferView[] or USVString[] ca;
+  ArrayBufferView or USVString passphrase;
+  
+  // The init object is extensible such that additional properties for TLS
+  // extensions can be added. E.g. a session id extension may look like:
+  //
+  // {
+  //   servername: 'foo',
+  //   session: {
+  //     sessionIDContext: 'abc',
+  //     session: new Uint8Array(...),
+  //     ticket: new Uint8Array(...)
+  //   }
+  // }
+  //
+  // These extensions would need to be defined separately.
 }
 
 [Exposed=(Window,Worker)]
@@ -107,6 +133,7 @@ interface SocketStats {
  
 [Exposed=(Window,Worker)]
 interface SocketInfo {
+  readonly attribute Type type;
   readonly attribute SocketAddress remote;
   readonly attribute SocketAddress local;
 }
@@ -114,7 +141,6 @@ interface SocketInfo {
 SocketInfo include TLSSocketInfo;
  
 interface TLSSocketInfo {
-  readonly attribute USVString alpn;
   readonly attribute USVString servername;
   readonly attribute Uint8Array certificate;
   readonly attribute Uint8Array peerCertificate;
@@ -137,16 +163,6 @@ dictionary EphemeralKeyInfo {
   USVstring name;
   unsigned short size;
 }
-   
-dictionary PresharedKeyInfo {
-  ArrayBufferView key;
-  USVString identity;
-}
- 
-callback PresharedKeyCallback = Promise<PresharedKeyInfo|undefined> ( USVString hint);
-callback ServerIdentityCallback = Promise<undefined>(USVString servername, Uint8Array cert);
-callback OCSPCallback = void (Uint8Array response);
-
 
 // Listening-side
 
@@ -157,7 +173,7 @@ interface SocketListener : EventTarget {
 }
 
 dictionary SocketListenerInit {
-  SocketType type = "tcp";
+  Type type = "tcp";
   SocketAddress local;
   AbortSignal signal;
   // TBD
@@ -169,25 +185,9 @@ dictionary TLSSocketListenerInit {
   // TBD
 }
 
-interface OnSocketEvent : Event {
+interface SocketEvent : Event {
   readonly attribute Socket socket;
-  void respondWith(SocketResponse response);
 }
-
-interface SocketResponse {
-  constructor(SocketResponseOptions options)
-}
-
-dictionary SocketResponseOptions {
-  SocketBody | Promise<SocketBody> body;
-  AbortSignal signal;
-  bool noDelay = false;
-  unsigned long connectionTimeout = 0;
-  unsigned long idleTimeout = 0;
-  unsigned long sendBufferSize;
-  unsigned long receiveBufferSize;
-  unsigned short ttl;
-};
 ```
 
 ## Examples
@@ -206,33 +206,43 @@ for await (const chunk of socket.stream())
 ```
 
 ```js
+// Minimal TCP client
+const socket = new Socket({
+  remote: { address: '123.123.123.123', port: 123 },
+});
+
+const writer = socket.writable.getWriter();
+const enc = new TextEncoder();
+await writer.write(enc.encode('hello world'));
+
+for await (const chunk of socket.stream())
+  console.log(chunk);
+```
+
+```js
 // Minimal echo server
 const socketListener = new SocketListener({ local: '123.123.123.123', port: 123 });
-for await (const { socket, respondWith } of socketListener) {
-  respondWith(new SocketResponse({ body: socket.stream() }));
+for await (const { socket } of socketListener) {
+  socket.readable.pipeTo(socket.writable);
 }
 
 // or...
 
 const socketListener = new SocketListener({ local: '123.123.123.123', port: 123 });
-socketListener.addEventListener('socket', { socket, respondWith } => {
-  respondWith(new SocketResponse({ body: socket.stream() }));    
+socketListener.addEventListener('socket', { socket } => {
+  socket.readable.pipeTo(socket.writable);
 });
 ```
 
 ```js
 // Minimal UDP client
-const t = new TransformStream();
-
 const socket = new Socket({
   type: 'udp',
-  remote: { address: '123.123.123.123', port: 123 },
-  body: t.readable,
-  ttl: 20,
+  remote: { address: '123.123.123.123', port: 123 },  ttl: 20,
 });
 
 const enc = new TextEncoder();
-const writer = t.writable.getWriter();
+const writer = socket.writable.getWriter();
 writer.write(enc.encode('hello')); // send a datagram packet with 'hello'
 writer.write(enc.encode('there')); // send a datagram packet with 'there'
 writer.close();
