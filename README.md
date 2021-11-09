@@ -27,6 +27,15 @@ The API description below is intended as a conversation starter. It's meant to s
 interface Socket : EventTarget {
   constructor(object SocketInit);
 
+  // Provides the ability to update the socket init after it has
+  // been established. This can be used, for instance, to modify
+  // the timeouts, upgrade a plaintext TCP connection to TLS, or
+  // to trigger a TLS renegotiation, etc.
+  // The Promise is resolved once the update is considered to be
+  // accepted, or rejected if the update cannot be accepted for
+  // any reason.
+  Promise<undefined> update(object SocketInit);
+
   readonly attribute ReadableStream readable;
   readonly attribute WritableStream writable;
 
